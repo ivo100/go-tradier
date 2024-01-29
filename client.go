@@ -258,6 +258,9 @@ func orderToParams(order Order) (url.Values, error) {
 		if order.Type == StopOrder || order.Type == StopLimitOrder {
 			form.Add("stop", strconv.FormatFloat(order.StopPrice, 'f', 2, 64))
 		}
+		if order.Class == Option {
+			form.Add("option_symbol", order.OptionSymbol)
+		}
 	case Multileg, Combo:
 		form.Add("symbol", order.Symbol)
 		form.Add("type", order.Type)
