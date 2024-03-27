@@ -104,17 +104,38 @@ func history(client *tradier.Client) {
 	}
 }
 
+func lookup(client *tradier.Client, arg string) {
+	fmt.Println("lookup " + arg)
+	res, err := client.LookupSecurities(nil, nil, arg)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	for _, sec := range res {
+		fmt.Printf("%v\n", sec.Symbol)
+	}
+}
+
 func main() {
-	subcommand := flag.String("command", "positions", "Command to run (positions, gainloss, openorders)")
+
+	subcommand := flag.String("command", "", "Command to run (positions, gainloss, openorders, lookup)")
+
 	apiKey := flag.String("tradier.apikey", "", "Tradier API key")
 	account := flag.String("tradier.account", "", "Tradier account ID")
+
+	arg := flag.String("arg", "", "additional argument (for lookup)")
+
 	flag.Parse()
 
 	params := tradier.DefaultParams(*apiKey)
 	client := tradier.NewClient(params)
 	client.SelectAccount(*account)
 
+	fmt.Printf("subcommand %v\n", *subcommand)
+
 	switch *subcommand {
+	case "lookup":
+		lookup(client, *arg)
 	case "positions":
 		showPositions(client)
 	case "gainloss":

@@ -105,7 +105,21 @@ func (tc *Client) GetAccountPositions() ([]*Position, error) {
 		}
 	}
 	err := tc.getJSON(url, &result)
-	return result.Positions.Position, err
+	if err != nil {
+		// tradier does not return array when single element
+		// so we have to do this awful hack
+		var result2 struct {
+			Positions struct {
+				Position Position
+			}
+		}
+		err2 := tc.getJSON(url, &result2)
+		if err2 != nil {
+			return nil, err2
+		}
+		return []*Position{&result2.Positions.Position}, nil
+	}
+	return result.Positions.Position, nil
 }
 
 func (tc *Client) GetAccountHistory(limit int) ([]*Event, error) {
@@ -402,30 +416,36 @@ func (tc *Client) CancelOrder(orderId int) error {
 func (tc *Client) LookupSecurities(
 	types []SecurityType, exchanges []string, query string) (
 	[]Security, error) {
-	url := tc.endpoint + "/v1/markets/lookup"
+	url := tc.endpoint + "/v1/markets/lookup?q=" + query
 	if len(types) > 0 {
 		strTypes := make([]string, len(types))
 		for i, t := range types {
 			strTypes[i] = string(t)
 		}
-		url = url + "?types=" + strings.Join(strTypes, ",")
+		url = url + "&types=" + strings.Join(strTypes, ",")
 	}
 	if exchanges != nil && len(exchanges) > 0 {
 		url = url + "&exchanges=" + strings.Join(exchanges, ",")
 	}
-	if query != "" {
-		url = url + "&q=" + query
-	}
+
+	fmt.Println(url)
 
 	var result struct {
 		Securities struct {
-			// TODO: If there is only one data point, then Tradier returns
-			// a single object (not a list) and this fails to parse it.
-			Security []Security
+			Security Security
 		}
 	}
 	err := tc.getJSON(url, &result)
-	return result.Securities.Security, err
+	if err == nil {
+		return []Security{result.Securities.Security}, err
+	}
+	var result2 struct {
+		Securities struct {
+			Security []Security
+		}
+	}
+	err = tc.getJSON(url, &result2)
+	return result2.Securities.Security, err
 }
 
 // Get the securities on the Easy-to-Borrow list.
@@ -786,8 +806,17 @@ func (tc *Client) getJSON(url string, result interface{}) error {
 		return errors.New(resp.Status + ": " + string(body))
 	}
 
-	dec := json.NewDecoder(resp.Body)
-	return dec.Decode(result)
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("JSON: %s\n",string(body))
+
+	err = json.Unmarshal(body, result)
+	return err
+	//dec := json.NewDecoder(body)
+	//return dec.Decode(result)
 }
 
 func (tc *Client) GetQuotes(symbols []string) ([]*Quote, error) {
