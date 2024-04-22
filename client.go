@@ -811,7 +811,7 @@ func (tc *Client) getJSON(url string, result interface{}) error {
 		return err
 	}
 
-	fmt.Printf("JSON: %s\n",string(body))
+	//fmt.Printf("JSON: %s\n",string(body))
 
 	err = json.Unmarshal(body, result)
 	return err
@@ -831,9 +831,20 @@ func (tc *Client) GetQuotes(symbols []string) ([]*Quote, error) {
 
 	err := tc.postJSON(uri, data, &result)
 	if err != nil {
-		return nil, err
+		// tradier does not return array when single element
+		// so we have to do this awful hack
+		// one workaround will be to split in 2 methods - GetQuote and GetQuotes
+		var result2 struct {
+			Quotes struct {
+				Quote Quote
+			}
+		}
+		err2 := tc.postJSON(uri, data, &result2)
+		if err2 != nil {
+			return nil, err2
+		}
+		return []*Quote{&result2.Quotes.Quote}, nil
 	}
-
 	return result.Quotes.Quote, nil
 }
 
