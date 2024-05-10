@@ -75,6 +75,10 @@ func NewClient(params ClientParams) *Client {
 	}
 }
 
+func (tc *Client) CloseIdleConnections() {
+	tc.client.CloseIdleConnections()
+}
+
 func (tc *Client) SelectAccount(account string) {
 	tc.account = account
 }
@@ -688,7 +692,8 @@ func (tc *Client) StreamMarketEvents(
 		form.Add("filter", strings.Join(strFilters, ","))
 	}
 	// TODO: Make validOnly/flags configurable.
-	form.Add("advancedDetails", "true")
+	//form.Add("advancedDetails", "true")
+
 	// If we fail here then just make a new session rather than retrying.
 	// This prevents repeated failures to a session that doesn't exist for
 	// some reason.

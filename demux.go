@@ -14,14 +14,14 @@ type StreamDemuxer struct {
 }
 
 func (sd *StreamDemuxer) Handle(event *StreamEvent) {
-	switch {
-	case event.Type == "quote":
+	switch event.Type {
+	case "quote":
 		sd.handleQuote(event)
-	case event.Type == "trade":
+	case "trade", "tradex":
 		sd.handleTrade(event)
-	case event.Type == "timesale":
+	case "timesale":
 		sd.handleTimeSale(event)
-	case event.Type == "summary":
+	case "summary":
 		sd.handleSummary(event)
 	}
 }
