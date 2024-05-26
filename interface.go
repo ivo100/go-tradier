@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-const (
-	SandboxEndpoint = "https://sandbox.tradier.com"
-	APIEndpoint     = "https://api.tradier.com"
-	StreamEndpoint  = "https://stream.tradier.com"
-)
-
 type MarketState string
 
 const (

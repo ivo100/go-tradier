@@ -1,6 +1,7 @@
 package tradier
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,7 +13,7 @@ func parseQuotaViolationExpiration(body string) time.Time {
 	if !strings.HasPrefix(body, "Quota Violation") {
 		return time.Time{}
 	}
-
+	fmt.Printf("error: %s\n", body)
 	parts := strings.Fields(body)
 	ms, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
 	if err != nil {

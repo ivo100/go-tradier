@@ -3,8 +3,8 @@ package tradier
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/timpalpant/go-tradier/config"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -45,7 +45,7 @@ type ClientParams struct {
 // DefaultParams returns ClientParams initialized with default values.
 func DefaultParams(authToken string) ClientParams {
 	return ClientParams{
-		Endpoint:   APIEndpoint,
+		Endpoint:   config.APIEndpoint,
 		AuthToken:  authToken,
 		Client:     &http.Client{},
 		Backoff:    backoff.NewExponentialBackOff(),
@@ -88,12 +88,12 @@ func (tc *Client) GetAccountBalances() (*AccountBalances, error) {
 		return nil, ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/balances"
+	uri := tc.endpoint + "/v1/accounts/" + tc.account + "/balances"
 	var result struct {
 		Balances *AccountBalances
 	}
 
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(uri, &result)
 	return result.Balances, err
 }
 
@@ -102,13 +102,13 @@ func (tc *Client) GetAccountPositions() ([]*Position, error) {
 		return nil, ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/positions"
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/positions"
 	var result struct {
 		Positions struct {
 			Position []*Position
 		}
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	if err != nil {
 		// tradier does not return array when single element
 		// so we have to do this awful hack
@@ -117,7 +117,7 @@ func (tc *Client) GetAccountPositions() ([]*Position, error) {
 				Position Position
 			}
 		}
-		err2 := tc.getJSON(url, &result2)
+		err2 := tc.getJSON(u, &result2)
 		if err2 != nil {
 			return nil, err2
 		}
@@ -131,16 +131,16 @@ func (tc *Client) GetAccountHistory(limit int) ([]*Event, error) {
 		return nil, ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/history"
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/history"
 	if limit > 0 {
-		url += fmt.Sprintf("?limit=%d", limit)
+		u += fmt.Sprintf("?limit=%d", limit)
 	}
 	var result struct {
 		History struct {
 			Event []*Event
 		}
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result.History.Event, err
 }
 
@@ -149,13 +149,13 @@ func (tc *Client) GetAccountCostBasis() ([]*ClosedPosition, error) {
 		return nil, ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/gainloss"
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/gainloss"
 	var result struct {
 		GainLoss struct {
 			ClosedPosition []*ClosedPosition `json:"closed_position"`
 		} `json:"gainloss"`
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result.GainLoss.ClosedPosition, err
 }
 
@@ -164,10 +164,10 @@ func (tc *Client) GetOpenOrders() ([]*Order, error) {
 		return nil, ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/orders"
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/orders"
 	var result openOrdersResponse
-	err := tc.getJSON(url, &result)
-	return []*Order(result.Orders.Order), err
+	err := tc.getJSON(u, &result)
+	return result.Orders.Order, err
 }
 
 func (tc *Client) GetOrderStatus(orderId int) (*Order, error) {
@@ -175,32 +175,35 @@ func (tc *Client) GetOrderStatus(orderId int) (*Order, error) {
 		return nil, ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/orders/" + strconv.Itoa(orderId)
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/orders/" + strconv.Itoa(orderId)
 	var result struct {
 		Order *Order
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result.Order, err
 }
 
+func bodyClose(resp *http.Response) {
+	_ = resp.Body.Close()
+}
 func (tc *Client) PlaceOrder(order Order) (int, error) {
 	if tc.account == "" {
 		return 0, ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/orders"
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/orders"
 	form, err := orderToParams(order)
 	if err != nil {
 		return 0, err
 	}
 
-	resp, err := tc.do("POST", url, form, 0)
+	resp, err := tc.do("POST", u, form, 0)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer bodyClose(resp)
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return 0, errors.New(resp.Status + ": " + string(body))
 	}
 
@@ -225,20 +228,20 @@ func (tc *Client) PreviewOrder(order Order) (*OrderPreview, error) {
 		return nil, ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/orders"
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/orders"
 	form, err := orderToParams(order)
 	if err != nil {
 		return nil, err
 	}
 
 	form.Add("preview", "true")
-	resp, err := tc.do("POST", url, form, tc.retryLimit)
+	resp, err := tc.do("POST", u, form, tc.retryLimit)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer bodyClose(resp)
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return nil, errors.New(resp.Status + ": " + string(body))
 	}
 
@@ -321,18 +324,18 @@ func (tc *Client) ChangeOrder(orderId int, order Order) error {
 		return ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/orders/" + strconv.Itoa(orderId)
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/orders/" + strconv.Itoa(orderId)
 	form, err := updateOrderParams(order)
 	if err != nil {
 		return err
 	}
-	resp, err := tc.do("PUT", url, form, tc.retryLimit)
+	resp, err := tc.do("PUT", u, form, tc.retryLimit)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer bodyClose(resp)
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return errors.New(resp.Status + ": " + string(body))
 	}
 
@@ -384,14 +387,14 @@ func (tc *Client) CancelOrder(orderId int) error {
 		return ErrNoAccountSelected
 	}
 
-	url := tc.endpoint + "/v1/accounts/" + tc.account + "/orders/" + strconv.Itoa(orderId)
-	resp, err := tc.do("DELETE", url, nil, tc.retryLimit)
+	u := tc.endpoint + "/v1/accounts/" + tc.account + "/orders/" + strconv.Itoa(orderId)
+	resp, err := tc.do("DELETE", u, nil, tc.retryLimit)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer bodyClose(resp)
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return errors.New(resp.Status + ": " + string(body))
 	}
 
@@ -420,26 +423,26 @@ func (tc *Client) CancelOrder(orderId int) error {
 func (tc *Client) LookupSecurities(
 	types []SecurityType, exchanges []string, query string) (
 	[]Security, error) {
-	url := tc.endpoint + "/v1/markets/lookup?q=" + query
+	u := tc.endpoint + "/v1/markets/lookup?q=" + query
 	if len(types) > 0 {
 		strTypes := make([]string, len(types))
 		for i, t := range types {
 			strTypes[i] = string(t)
 		}
-		url = url + "&types=" + strings.Join(strTypes, ",")
+		u = u + "&types=" + strings.Join(strTypes, ",")
 	}
 	if exchanges != nil && len(exchanges) > 0 {
-		url = url + "&exchanges=" + strings.Join(exchanges, ",")
+		u = u + "&exchanges=" + strings.Join(exchanges, ",")
 	}
 
-	fmt.Println(url)
+	fmt.Println(u)
 
 	var result struct {
 		Securities struct {
 			Security Security
 		}
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	if err == nil {
 		return []Security{result.Securities.Security}, err
 	}
@@ -448,93 +451,74 @@ func (tc *Client) LookupSecurities(
 			Security []Security
 		}
 	}
-	err = tc.getJSON(url, &result2)
+	err = tc.getJSON(u, &result2)
 	return result2.Securities.Security, err
 }
 
 // Get the securities on the Easy-to-Borrow list.
 func (tc *Client) GetEasyToBorrow() ([]Security, error) {
-	url := tc.endpoint + "/v1/markets/etb"
+	u := tc.endpoint + "/v1/markets/etb"
 	var result struct {
 		Securities struct {
 			Security []Security
 		}
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result.Securities.Security, err
 }
 
-// Get an option's expiration dates.
-func (tc *Client) GetOptionExpirationDates(symbol string) ([]time.Time, error) {
-	params := "?symbol=" + symbol
-	url := tc.endpoint + "/v1/markets/options/expirations" + params
-	var result struct {
-		Expirations struct {
-			Date []DateTime
-		}
-	}
-	err := tc.getJSON(url, &result)
-
-	times := make([]time.Time, len(result.Expirations.Date))
-	for i, dt := range result.Expirations.Date {
-		times[i] = dt.Time
-	}
-
-	return times, err
-}
-
-// Get an option's expiration dates.
+// GetOptionStrikes returns list of an option's strikes.
 func (tc *Client) GetOptionStrikes(symbol string, expiration time.Time) ([]float64, error) {
 	params := "?symbol=" + symbol + "&expiration=" + expiration.Format("2006-01-02")
-	url := tc.endpoint + "/v1/markets/options/strikes" + params
+	u := tc.endpoint + "/v1/markets/options/strikes" + params
 	var result struct {
 		Strikes struct {
 			Strike []float64
 		}
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result.Strikes.Strike, err
 }
 
 // Get an option chain.
 func (tc *Client) GetOptionChain(symbol string, expiration time.Time) ([]*Quote, error) {
 	params := "?greeks=true&symbol=" + symbol + "&expiration=" + expiration.Format("2006-01-02")
-	url := tc.endpoint + "/v1/markets/options/chains" + params
+	u := tc.endpoint + "/v1/markets/options/chains" + params
 	var result struct {
 		Options struct {
 			Option []*Quote
 		}
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result.Options.Option, err
 }
 
 func (tc *Client) getTimeSalesUrl(symbol string, interval Interval, start, end time.Time) string {
-	url := tc.endpoint
+	u := tc.endpoint
 	timeFormat := "2006-01-02T15:04:05"
 	tz := time.UTC
 	var err error
 	if interval == IntervalDaily || interval == IntervalWeekly || interval == IntervalMonthly {
-		url = url + "/v1/markets/history"
+		u = u + "/v1/markets/history"
 		timeFormat = "2006-01-02"
 	} else {
-		url = url + "/v1/markets/timesales"
+		u = u + "/v1/markets/timesales"
 		tz, err = time.LoadLocation("America/New_York")
 		if err != nil {
 			panic(err)
 		}
 	}
-	url = url + "?symbol=" + symbol
+	u = u + "?symbol=" + symbol
 	if interval != "" {
-		url = url + "&interval=" + string(interval)
+		u = u + "&interval=" + string(interval)
 	}
 	if !start.IsZero() {
-		url = url + "&start=" + start.In(tz).Format(timeFormat)
+		u = u + "&start=" + start.In(tz).Format(timeFormat)
 	}
 	if !end.IsZero() {
-		url = url + "&end=" + end.In(tz).Format(timeFormat)
+		u = u + "&end=" + end.In(tz).Format(timeFormat)
 	}
-	return url
+	return u
 }
 
 // NOTE: If there is only one data point, then Tradier returns
@@ -607,9 +591,9 @@ func (tc *Client) GetTimeSales(
 	symbol string, interval Interval,
 	start, end time.Time) ([]TimeSale, error) {
 
-	url := tc.getTimeSalesUrl(symbol, interval, start, end)
+	u := tc.getTimeSalesUrl(symbol, interval, start, end)
 
-	resp, err := tc.do("GET", url, nil, tc.retryLimit)
+	resp, err := tc.do("GET", u, nil, tc.retryLimit)
 	if err != nil {
 		if err, ok := err.(TradierError); ok {
 			if err.Fault.Detail.ErrorCode == ErrBodyBufferOverflow {
@@ -640,7 +624,7 @@ func (tc *Client) GetTimeSales(
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer bodyClose(resp)
 	return decodeTimeSales(resp.Body, interval)
 }
 
@@ -661,9 +645,9 @@ func (tc *Client) StreamMarketEvents(
 	if err != nil {
 		return nil, err
 	}
-	defer createSessionResp.Body.Close()
+	defer bodyClose(createSessionResp)
 	if createSessionResp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(createSessionResp.Body)
+		body, _ := io.ReadAll(createSessionResp.Body)
 		return nil, errors.New(createSessionResp.Status + ": " + string(body))
 	}
 
@@ -703,7 +687,7 @@ func (tc *Client) StreamMarketEvents(
 	} else if resp == nil {
 		return nil, errors.New("nil response with no error")
 	} else if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return nil, errors.New(resp.Status + ": " + string(body))
 	}
 
@@ -713,7 +697,7 @@ func (tc *Client) StreamMarketEvents(
 // Get the market calendar for a given month.
 func (tc *Client) GetMarketCalendar(year int, month time.Month) ([]MarketCalendar, error) {
 	params := fmt.Sprintf("?year=%d&month=%d", year, month)
-	url := tc.endpoint + "/v1/markets/calendar" + params
+	u := tc.endpoint + "/v1/markets/calendar" + params
 	var result struct {
 		Calendar struct {
 			Days struct {
@@ -722,17 +706,17 @@ func (tc *Client) GetMarketCalendar(year int, month time.Month) ([]MarketCalenda
 		}
 	}
 
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result.Calendar.Days.Day, err
 }
 
 // Get the current state of the market (open/closed/etc.)
 func (tc *Client) GetMarketState() (MarketStatus, error) {
-	url := tc.endpoint + "/v1/markets/clock"
+	u := tc.endpoint + "/v1/markets/clock"
 	var result struct {
 		Clock MarketStatus
 	}
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result.Clock, err
 }
 
@@ -740,63 +724,63 @@ func (tc *Client) GetMarketState() (MarketStatus, error) {
 func (tc *Client) GetCorporateCalendars(symbols []string) (
 	GetCorporateCalendarsResponse, error) {
 	params := "?symbols=" + strings.Join(symbols, ",")
-	url := tc.endpoint + "/beta/markets/fundamentals/calendars" + params
+	u := tc.endpoint + "/beta/markets/fundamentals/calendars" + params
 	var result GetCorporateCalendarsResponse
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result, err
 }
 
 // Get company fundamentals.
 func (tc *Client) GetCompanyInfo(symbols []string) (GetCompanyInfoResponse, error) {
 	params := "?symbols=" + strings.Join(symbols, ",")
-	url := tc.endpoint + "/beta/markets/fundamentals/company" + params
+	u := tc.endpoint + "/beta/markets/fundamentals/company" + params
 	var result GetCompanyInfoResponse
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result, err
 }
 
 // Get corporate actions.
 func (tc *Client) GetCorporateActions(symbols []string) (GetCorporateActionsResponse, error) {
 	params := "?symbols=" + strings.Join(symbols, ",")
-	url := tc.endpoint + "/beta/markets/fundamentals/corporate_actions" + params
+	u := tc.endpoint + "/beta/markets/fundamentals/corporate_actions" + params
 	var result GetCorporateActionsResponse
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result, err
 }
 
 // Get dividends.
 func (tc *Client) GetDividends(symbols []string) (GetDividendsResponse, error) {
 	params := "?symbols=" + strings.Join(symbols, ",")
-	url := tc.endpoint + "/beta/markets/fundamentals/dividends" + params
+	u := tc.endpoint + "/beta/markets/fundamentals/dividends" + params
 	var result GetDividendsResponse
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result, err
 }
 
 // Get corporate ratios.
 func (tc *Client) GetRatios(symbols []string) (GetRatiosResponse, error) {
 	params := "?symbols=" + strings.Join(symbols, ",")
-	url := tc.endpoint + "/beta/markets/fundamentals/ratios" + params
+	u := tc.endpoint + "/beta/markets/fundamentals/ratios" + params
 	var result GetRatiosResponse
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result, err
 }
 
 // Get financial reports.
 func (tc *Client) GetFinancials(symbols []string) (GetFinancialsResponse, error) {
 	params := "?symbols=" + strings.Join(symbols, ",")
-	url := tc.endpoint + "/beta/markets/fundamentals/financials" + params
+	u := tc.endpoint + "/beta/markets/fundamentals/financials" + params
 	var result GetFinancialsResponse
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result, err
 }
 
 // Get price statistics.
 func (tc *Client) GetPriceStatistics(symbols []string) (GetPriceStatisticsResponse, error) {
 	params := "?symbols=" + strings.Join(symbols, ",")
-	url := tc.endpoint + "/beta/markets/fundamentals/statistics" + params
+	u := tc.endpoint + "/beta/markets/fundamentals/statistics" + params
 	var result GetPriceStatisticsResponse
-	err := tc.getJSON(url, &result)
+	err := tc.getJSON(u, &result)
 	return result, err
 }
 
@@ -805,18 +789,18 @@ func (tc *Client) getJSON(url string, result interface{}) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer bodyClose(resp)
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return errors.New(resp.Status + ": " + string(body))
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
-	//fmt.Printf("JSON: %s\n",string(body))
+	fmt.Printf("JSON: %s\n", string(body))
 
 	err = json.Unmarshal(body, result)
 	return err
@@ -859,9 +843,9 @@ func (tc *Client) postJSON(url string, data url.Values, result interface{}) erro
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer bodyClose(resp)
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return errors.New(resp.Status + ": " + string(body))
 	}
 
@@ -891,8 +875,8 @@ func (tc *Client) do(method, url string, body url.Values, maxRetries int) (*http
 			sleep = tc.backoff.NextBackOff()
 		} else if resp.StatusCode != http.StatusOK {
 			var respBody []byte
-			respBody, err = ioutil.ReadAll(resp.Body)
-			resp.Body.Close()
+			respBody, err = io.ReadAll(resp.Body)
+			bodyClose(resp)
 			tradierErr := TradierError{
 				HttpStatusCode: resp.StatusCode,
 			}
@@ -905,11 +889,13 @@ func (tc *Client) do(method, url string, body url.Values, maxRetries int) (*http
 			// Assign an error since we have read the body. If this is the last retry,
 			// we need to return a non-nil error.
 			err = tradierErr
-			rateLimitExpiry := parseQuotaViolationExpiration(tradierErr.Fault.FaultString)
-			if rateLimitExpiry.After(time.Now().Add(sleep)) {
-				sleep = rateLimitExpiry.Sub(time.Now()) + (1 * time.Second)
+			rateLimit := parseQuotaViolationExpiration(tradierErr.Fault.FaultString)
+			if rateLimit.After(time.Now().Add(sleep)) {
+				sleep = rateLimit.Sub(time.Now()) + (1 * time.Second)
+				fmt.Printf("ratelimit sleep %.2f sec\n", sleep.Seconds())
 			} else {
 				sleep = tc.backoff.NextBackOff()
+				fmt.Printf("backoff sleep %.2f sec\n", sleep.Seconds())
 			}
 		}
 
